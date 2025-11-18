@@ -1,0 +1,215 @@
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JARVIS Face Recognition</title>
+  <style>
+    body {
+      margin: 0;
+      background: radial-gradient(circle, #00111a, #000);
+      font-family: 'Orbitron', sans-serif;
+      color: #0ff;
+      overflow: hidden;
+    }
+    .jarvis-core {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, #00ffff, #001122 70%);
+      border-radius: 50%;
+      box-shadow: 0 0 40px #0ff, inset 0 0 30px #0ff;
+      animation: rotate 10s linear infinite, pulse 2s infinite;
+    }
+    @keyframes rotate {
+      0% { transform: translate(-50%, -50%) rotate(0deg); }
+      100% { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 40px #0ff, inset 0 0 30px #0ff; }
+      50% { box-shadow: 0 0 80px #0ff, inset 0 0 60px #0ff; }
+    }
+    #camera-box {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      border: 2px solid #0ff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 0 10px #0ff;
+    }
+    #video {
+      width: 160px;
+      height: 120px;
+      object-fit: cover;
+    }
+    #controls {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: rgba(0,255,255,0.1);
+      padding: 15px;
+      border-radius: 12px;
+      border: 1px solid #0ff;
+      box-shadow: 0 0 20px #0ff5;
+    }
+    #nameInput, #registerBtn {
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: none;
+      outline: none;
+    }
+    #registerBtn {
+      background-color: #0ff;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 18px;
+      color: #0f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="jarvis-core"></div>
+  <div id="camera-box">
+    <video id="video" autoplay muted></video>
+  </div>
+  <div id="controls">
+    <input type="text" id="nameInput" placeholder="Enter your name" />
+    <button id="registerBtn">Register</button>
+    <div id="status">Initializing...</div>
+  </div>
+
+  <script>
+    const apiKey = 'ojTiKOCra5QlHUfzaRlmVHqGGCbhEF79';
+    const apiSecret = '2gU4sm6a_HrV5tj4l0j0GmoFVXT200PX';
+    const detectURL = 'https://api-us.faceplusplus.com/facepp/v3/detect';
+    const compareURL = 'https://api-us.faceplusplus.com/facepp/v3/compare';
+    const facesetCreateURL = 'https://api-us.faceplusplus.com/facepp/v3/faceset/create';
+    const facesetAddURL = 'https://api-us.faceplusplus.com/facepp/v3/faceset/addface';
+    const facesetSearchURL = 'https://api-us.faceplusplus.com/facepp/v3/search';
+
+    const outerId = 'jarvis_faceset';
+    const video = document.getElementById('video');
+    const nameInput = document.getElementById('nameInput');
+    const statusDiv = document.getElementById('status');
+
+    const speak = (msg) => {
+      const utter = new SpeechSynthesisUtterance(msg);
+      utter.rate = 1;
+      utter.pitch = 1.2;
+      utter.volume = 1;
+      speechSynthesis.speak(utter);
+    };
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+      } catch (e) {
+        statusDiv.innerText = 'Camera access denied.';
+      }
+    }
+
+    async function captureBlob() {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+      return await new Promise((res) => canvas.toBlob(res, 'image/jpeg'));
+    }
+
+    async function ensureFaceSetExists() {
+      await fetch(facesetCreateURL, {
+        method: 'POST',
+        body: new URLSearchParams({
+          api_key: apiKey,
+          api_secret: apiSecret,
+          outer_id: outerId
+        })
+      });
+    }
+
+    async function registerFace() {
+      await ensureFaceSetExists();
+      statusDiv.innerText = 'Registering...';
+      speak("Registering your face");
+
+      const blob = await captureBlob();
+      const form = new FormData();
+      form.append('api_key', apiKey);
+      form.append('api_secret', apiSecret);
+      form.append('image_file', blob);
+
+      const response = await fetch(detectURL, { method: 'POST', body: form });
+      const data = await response.json();
+      if (!data.faces || !data.faces[0]) {
+        statusDiv.innerText = 'Face not detected. Try again.';
+        speak('Face not detected');
+        return;
+      }
+
+      const faceToken = data.faces[0].face_token;
+      const addForm = new URLSearchParams({
+        api_key: apiKey,
+        api_secret: apiSecret,
+        outer_id: outerId,
+        face_tokens: faceToken
+      });
+      await fetch(facesetAddURL, { method: 'POST', body: addForm });
+
+      localStorage.setItem('user_name', nameInput.value);
+      speak('Your face has been registered successfully');
+      statusDiv.innerText = '✅ Registered: ' + nameInput.value;
+      setTimeout(() => scanFace(), 2000);
+    }
+
+    async function scanFace() {
+      speak("I'm scanning your face");
+      statusDiv.innerText = 'Scanning...';
+
+      const blob = await captureBlob();
+      const form = new FormData();
+      form.append('api_key', apiKey);
+      form.append('api_secret', apiSecret);
+      form.append('image_file', blob);
+      form.append('outer_id', outerId);
+
+      const response = await fetch(facesetSearchURL, { method: 'POST', body: form });
+      const data = await response.json();
+
+      if (data.results && data.results.length > 0 && data.results[0].confidence > 80) {
+        speak('Your face is scanned successfully and you are allowed to use the Large model');
+        statusDiv.innerText = '✅ Welcome ' + localStorage.getItem('user_name');
+        setTimeout(() => window.location.href = 'try1.html', 2000);
+      } else {
+        speak('Denied, your face is not recognized, you must register your face');
+        statusDiv.innerText = '❌ Face not recognized';
+      }
+    }
+
+    document.getElementById('registerBtn').onclick = registerFace;
+
+    window.onload = async () => {
+      await startCamera();
+      statusDiv.innerText = 'Ready to scan/register.';
+      setTimeout(() => scanFace(), 3000);
+    }
+  </script>
+</body>
+</html>   

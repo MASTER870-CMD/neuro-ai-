@@ -1,0 +1,375 @@
+<!-- 
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chatbot with Contact Form</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      padding: 30px;
+      text-align: center;
+    }
+    h1 {
+      color: #333;
+    }
+    input, button {
+      padding: 10px;
+      margin: 10px;
+      font-size: 16px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+    #contactList {
+      margin-top: 30px;
+      text-align: left;
+      max-width: 600px;
+      margin-inline: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    #voice {
+      display: none;
+      width: 150px;
+      margin-top: 20px;
+    }
+    #btn {
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+    .delete-btn, .edit-btn {
+      background-color: red;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      margin-left: 5px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .edit-btn {
+      background-color: orange;
+    }
+  </style>
+</head>
+<body>
+  <h1>WhatsApp Contact Chatbot</h1>
+
+  <input type="text" id="nameInput" placeholder="Enter contact name" />
+  <input type="text" id="phoneInput" placeholder="Enter phone number (with country code)" />
+  <br>
+  <button onclick="saveContact()">Save Contact</button>
+  <button onclick="downloadContacts()">Download Contacts</button>
+  <input type="file" id="importFile" accept=".json" onchange="importContacts(event)" />
+
+  <div>
+    <input type="text" id="searchInput" placeholder="Search contact by name" oninput="updateContactDisplay()" />
+  </div>
+
+  <div id="contactList">
+    <h2>Saved Contacts:</h2>
+    <ul id="contactsDisplay"></ul>
+  </div>
+
+  <img src="loading.gif" id="voice">
+  <br>
+  <button id="btn"><span id="content">Click To Talk</span></button>
+
+  <script>
+    let btn = document.querySelector("#btn");
+    let content = document.querySelector("#content");
+    let voice = document.querySelector("#voice");
+    let contactNumbers = JSON.parse(localStorage.getItem("contacts")) || {};
+
+    function speak(text) {
+      let utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => setVoice(utterance);
+      } else {
+        setVoice(utterance);
+      }
+      function setVoice(u) {
+        const voice = voices.find(v =>
+          v.name.toLowerCase().includes("female") ||
+          v.name.toLowerCase().includes("zira") ||
+          v.name.toLowerCase().includes("google")
+        );
+        if (voice) u.voice = voice;
+        window.speechSynthesis.speak(u);
+      }
+    }
+
+    function saveContact() {
+      const name = document.getElementById("nameInput").value.trim().toLowerCase();
+      const phone = document.getElementById("phoneInput").value.trim();
+      if (!name || !phone) {
+        alert("Please enter both name and phone number.");
+        return;
+      }
+      contactNumbers[name] = phone;
+      localStorage.setItem("contacts", JSON.stringify(contactNumbers));
+      updateContactDisplay();
+      document.getElementById("nameInput").value = '';
+      document.getElementById("phoneInput").value = '';
+    }
+
+    function editContact(name) {
+      document.getElementById("nameInput").value = name;
+      document.getElementById("phoneInput").value = contactNumbers[name];
+    }
+
+    function deleteContact(name) {
+      if (confirm(`Are you sure you want to delete contact: ${name}?`)) {
+        delete contactNumbers[name];
+        localStorage.setItem("contacts", JSON.stringify(contactNumbers));
+        updateContactDisplay();
+      }
+    }
+
+    function updateContactDisplay() {
+      const display = document.getElementById("contactsDisplay");
+      const searchValue = document.getElementById("searchInput").value.trim().toLowerCase();
+      display.innerHTML = '';
+      for (let name in contactNumbers) {
+        if (name.includes(searchValue)) {
+          const li = document.createElement("li");
+          li.innerHTML = `${name} → ${contactNumbers[name]} 
+            <button class="edit-btn" onclick="editContact('${name}')">Edit</button>
+            <button class="delete-btn" onclick="deleteContact('${name}')">Delete</button>`;
+          display.appendChild(li);
+        }
+      }
+    }
+
+    function downloadContacts() {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(contactNumbers, null, 2));
+      const dlAnchor = document.createElement('a');
+      dlAnchor.setAttribute("href", dataStr);
+      dlAnchor.setAttribute("download", "contacts.json");
+      document.body.appendChild(dlAnchor);
+      dlAnchor.click();
+      dlAnchor.remove();
+    }
+
+    function importContacts(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const imported = JSON.parse(e.target.result);
+          contactNumbers = { ...contactNumbers, ...imported };
+          localStorage.setItem("contacts", JSON.stringify(contactNumbers));
+          updateContactDisplay();
+          alert("Contacts imported successfully.");
+        } catch (error) {
+          alert("Invalid JSON file.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function wishMe() {
+      const hours = new Date().getHours();
+      if (hours < 12) speak("Good morning!");
+      else if (hours < 17) speak("Good afternoon!");
+      else speak("Good evening!");
+    }
+
+    window.addEventListener('load', () => {
+      wishMe();
+      updateContactDisplay();
+    });
+
+    let recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.onresult = (event) => {
+      let transcript = event.results[event.resultIndex][0].transcript.toLowerCase();
+      content.innerText = transcript;
+
+      if (transcript.startsWith("send a message to")) {
+        let commandBody = transcript.replace("send a message to", "").trim();
+        let split = commandBody.split(" ");
+        let possibleName = split[0];
+        let messagePart = split.slice(1).join(" ");
+
+        const foundName = Object.keys(contactNumbers).find(name =>
+          name.toLowerCase() === possibleName ||
+          possibleName.includes(name.toLowerCase()) ||
+          name.toLowerCase().includes(possibleName)
+        );
+
+        if (foundName && messagePart.length > 0) {
+          speak(`Sending message to ${foundName}: ${messagePart}`);
+          const phone = contactNumbers[foundName];
+          const url = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(messagePart)}`;
+          const chatTab = window.open(url, '_blank');
+          setTimeout(() => {
+            if (chatTab) chatTab.close();
+            window.focus();
+          }, 15000);
+        } else if (foundName && messagePart.length === 0) {
+          speak(`What is the message to ${foundName}?`);
+          stage = 1;
+          pendingContact = foundName;
+          recognition.start();
+        } else {
+          speak("I couldn't find that contact.");
+        }
+      } else if (stage === 1 && pendingContact) {
+        const msg = transcript.trim();
+        speak(`Sending message to ${pendingContact}: ${msg}`);
+        const phone = contactNumbers[pendingContact];
+        const url = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(msg)}`;
+        const chatTab = window.open(url, '_blank');
+        setTimeout(() => {
+          if (chatTab) chatTab.close();
+          window.focus();
+        }, 15000);
+        stage = 0;
+        pendingContact = null;
+      }
+    };
+
+    btn.addEventListener("click", () => {
+      recognition.start();
+      btn.style.display = "none";
+      voice.style.display = "block";
+    });
+  </script>
+</body>
+</html> -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Contact Save</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      padding: 30px;
+      text-align: center;
+    }
+    input, button {
+      padding: 10px;
+      margin: 10px;
+      font-size: 16px;
+      border-radius: 6px;
+    }
+    #contactList {
+      margin-top: 20px;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>WhatsApp Contact Manager</h1>
+
+  <input type="text" id="nameInput" placeholder="Contact Name (e.g. rahul)" />
+  <input type="text" id="phoneInput" placeholder="Phone Number with Country Code" />
+  <br>
+  <button onclick="saveContact()">Save Contact</button>
+
+  <div id="contactList">
+    <h2>Saved Contacts</h2>
+    <ul id="contactsDisplay"></ul>
+  </div>
+
+  <script>
+    let contactNumbers = JSON.parse(localStorage.getItem("contacts")) || {};
+
+    function speak(text) {
+      let utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => speak(text);
+      } else {
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    function saveContact() {
+      const name = document.getElementById("nameInput").value.trim().toLowerCase();
+      const phone = document.getElementById("phoneInput").value.trim();
+
+      if (!name || !phone) {
+        alert("Please enter both name and phone number.");
+        return;
+      }
+
+      contactNumbers[name] = phone;
+      localStorage.setItem("contacts", JSON.stringify(contactNumbers));
+      updateContactDisplay();
+      document.getElementById("nameInput").value = '';
+      document.getElementById("phoneInput").value = '';
+
+      const pendingName = localStorage.getItem("pendingName");
+      const pendingMsg = localStorage.getItem("pendingMsg");
+
+      if (pendingName === name && pendingMsg) {
+        localStorage.setItem("redirectAfterSave", "yes");
+        setTimeout(() => {
+          window.location.href = "try.html";
+        }, 2000);
+      }
+    }
+
+    function updateContactDisplay() {
+      const display = document.getElementById("contactsDisplay");
+      display.innerHTML = '';
+      for (let name in contactNumbers) {
+        const li = document.createElement("li");
+        li.innerText = `${name} → ${contactNumbers[name]}`;
+        display.appendChild(li);
+      }
+    }
+
+    window.addEventListener('load', () => {
+      const pendingName = localStorage.getItem("pendingName");
+      const pendingMsg = localStorage.getItem("pendingMsg");
+
+      if (pendingName && !contactNumbers[pendingName]) {
+        document.getElementById("nameInput").value = pendingName;
+        speak(`Please enter phone number for ${pendingName}`);
+      }
+
+      updateContactDisplay();
+    });
+  </script>
+</body>
+</html>

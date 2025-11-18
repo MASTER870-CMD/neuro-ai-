@@ -1,0 +1,228 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Send File to Phone</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      padding: 20px;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    .container {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 20px;
+      padding: 30px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      text-align: center;
+    }
+
+    h2 {
+      font-size: clamp(24px, 5vw, 36px);
+      margin-bottom: 20px;
+    }
+
+    #drop-area {
+      border: 2px dashed #00f2ff;
+      padding: 25px;
+      background: #111;
+      border-radius: 12px;
+      margin-bottom: 20px;
+    }
+
+    #drop-area p {
+      margin: 0 0 10px;
+      font-size: clamp(14px, 4vw, 18px);
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: clamp(14px, 4vw, 16px);
+      background: #00f2ff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #000;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background: #00c2cc;
+    }
+
+    #progress-container {
+      width: 100%;
+      margin-top: 20px;
+      background: #222;
+      border-radius: 8px;
+      overflow: hidden;
+      display: none;
+      position: relative;
+      height: 24px;
+    }
+
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #00f2ff;
+    }
+
+    #progress-text {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 14px;
+      line-height: 24px;
+      color: #000;
+      font-weight: bold;
+    }
+
+    #file-name {
+      margin-top: 10px;
+      font-size: clamp(12px, 3.5vw, 16px);
+      word-break: break-word;
+    }
+
+    #qr {
+      margin-top: 25px;
+      max-width: 100%;
+      width: 280px;
+      height: 280px;
+    }
+
+    @media (max-width: 600px) {
+      #qr {
+        width: 200px;
+        height: 200px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Send File to Your Phone</h2>
+    <div id="drop-area">
+      <p>Drag and drop your file here</p>
+      <input type="file" id="fileElem" style="display:none">
+      <button onclick="fileElem.click()">Browse</button>
+    </div>
+
+    <div id="file-name"></div>
+    <div id="progress-container">
+      <div id="progress-bar"></div>
+      <div id="progress-text">0%</div>
+    </div>
+    <canvas id="qr"></canvas>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <script>
+    const dropArea = document.getElementById("drop-area");
+    const fileInput = document.getElementById("fileElem");
+    const qrCanvas = document.getElementById("qr");
+    const progressContainer = document.getElementById("progress-container");
+    const progressBar = document.getElementById("progress-bar");
+    const progressText = document.getElementById("progress-text");
+    const fileNameDisplay = document.getElementById("file-name");
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropArea.addEventListener(eventName, e => e.preventDefault());
+    });
+
+    dropArea.addEventListener('drop', async e => {
+      e.preventDefault();
+      const file = e.dataTransfer.files[0];
+      if (file) await handleFile(file);
+    });
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (file) await handleFile(file);
+    });
+
+    async function handleFile(file) {
+      speak("Uploading your file, please wait.");
+      const formData = new FormData();
+      formData.append("file", file);
+
+      fileNameDisplay.textContent = "Uploading: " + file.name;
+      progressContainer.style.display = "block";
+      progressBar.style.width = "0%";
+      progressText.textContent = "0%";
+
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "https://store1.gofile.io/uploadFile", true);
+
+        xhr.upload.onprogress = function(event) {
+          if (event.lengthComputable) {
+            const percent = Math.floor((event.loaded / event.total) * 100);
+            progressBar.style.width = percent + "%";
+            progressText.textContent = percent + "%";
+          }
+        };
+
+        xhr.onload = function() {
+          if (xhr.status === 200) {
+            const result = JSON.parse(xhr.responseText);
+            if (result.status === "ok") {
+              const downloadUrl = result.data.downloadPage;
+              speak("Upload complete. Scan the QR code to download the file.");
+              QRCode.toCanvas(qrCanvas, downloadUrl, {
+                color: {
+                  dark: "#ffffff",
+                  light: "#000000"
+                }
+              });
+            } else {
+              speak("Upload failed.");
+              console.error("Upload failed:", result);
+            }
+          } else {
+            speak("Upload failed.");
+            console.error("Upload error:", xhr.statusText);
+          }
+        };
+
+        xhr.onerror = function() {
+          speak("Something went wrong while uploading.");
+          console.error("Upload failed.");
+        };
+
+        xhr.send(formData);
+      } catch (err) {
+        speak("Something went wrong.");
+        console.error("Exception:", err);
+      }
+    }
+
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "en";
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utterance);
+    }
+
+    speak("Drop your files and I will send them to your phone.");
+  </script>
+</body>
+</html>
